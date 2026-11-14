@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from pymongo import MongoClient
-from datetime import datetime
 
 # ----------------------------------
 # PAGE CONFIGURATION
@@ -134,6 +133,18 @@ if len(date_range) == 2:
 else:
     filtered_df = df.iloc[0:0]
 
+# ----------------------------------
+# POLLUTION CLASSIFICATION
+# ----------------------------------
+
+filtered_df = filtered_df.copy()
+
+filtered_df["pollution_category"] = pd.cut(
+    filtered_df["pm25"],
+    bins=[-float("inf"), 15, 35, 55, float("inf")],
+    labels=["Low", "Moderate", "High", "Very High"]
+)
+
 
 # ----------------------------------
 # KPI METRICS
@@ -253,6 +264,126 @@ st.plotly_chart(
     use_container_width=True
 )
 
+# ----------------------------------
+# POLLUTION CATEGORY DISTRIBUTION
+# ----------------------------------
+
+st.subheader("Pollution Classification")
+
+category_counts = (
+    filtered_df["pollution_category"]
+    .value_counts()
+    .reindex(
+        ["Low", "Moderate", "High", "Very High"],
+        fill_value=0
+    )
+    .reset_index()
+)
+
+category_counts.columns = ["Category", "Readings"]
+
+classification_fig = px.bar(
+    category_counts,
+    x="Category",
+    y="Readings",
+    color="Category",
+    title="Distribution of Pollution Categories",
+    text="Readings"
+)
+
+st.plotly_chart(
+    classification_fig,
+    use_container_width=True
+)
+
+# ----------------------------------
+# DATA QUALITY DASHBOARD
+# ----------------------------------
+
+st.subheader("🔍 Data Quality Analysis")
+
+collection = get_collection()
+
+# 1. Missing values
+required_fields = [
+    "temperature",
+    "humidity",
+    "pm25",
+    "pm10",
+    "co2"
+]
+
+missing_count = 0
+
+for field in required_fields:
+    missing_count += collection.count_documents({
+        "$or": [
+            {field: {"$exists": False}},
+            {field: None}
+        ]
+    })
+
+# 2. Duplicate sensor-timestamp groups
+duplicate_pipeline = [
+    {
+        "$group": {
+            "_id": {
+                "sensor_id": "$sensor_id",
+                "timestamp": "$timestamp"
+            },
+            "count": {"$sum": 1}
+        }
+    },
+    {
+        "$match": {
+            "count": {"$gt": 1}
+        }
+    },
+    {
+        "$count": "duplicate_groups"
+    }
+]
+
+duplicates = list(collection.aggregate(duplicate_pipeline))
+
+duplicate_count = (
+    duplicates[0]["duplicate_groups"] if duplicates else 0
+)
+
+# 3. Invalid readings
+invalid_count = collection.count_documents({
+    "$or": [
+        {"temperature": {"$lt": 10}},
+        {"temperature": {"$gt": 45}},
+        {"humidity": {"$lt": 20}},
+        {"humidity": {"$gt": 100}},
+        {"pm25": {"$lt": 0}},
+        {"pm10": {"$lt": 0}},
+        {"co2": {"$lt": 300}}
+    ]
+})
+
+quality_col1, quality_col2, quality_col3 = st.columns(3)
+
+quality_col1.metric(
+    "Missing Values",
+    f"{missing_count:,}"
+)
+
+quality_col2.metric(
+    "Duplicate Groups",
+    f"{duplicate_count:,}"
+)
+
+quality_col3.metric(
+    "Invalid Readings",
+    f"{invalid_count:,}"
+)
+
+if missing_count == 0 and duplicate_count == 0 and invalid_count == 0:
+    st.success("Database quality checks completed. No issues detected.")
+else:
+    st.warning("Potential data quality issues detected. Review the indicators above.")
 
 # ----------------------------------
 # LOCATION-WISE ANALYSIS
