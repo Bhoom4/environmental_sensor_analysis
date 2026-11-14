@@ -94,6 +94,7 @@ def main():
 
         for result in collection.aggregate(location_pipeline):
             pprint(result)
+ 
 
         # 4. Daily environmental trends
         print("\n4. DAILY ENVIRONMENTAL TRENDS")
@@ -208,14 +209,97 @@ def main():
         print("Potential abnormal readings (showing up to 10):")
         pprint(anomalies)
 
+ 
+        # 7. Pollution classification analysis
+        print("\n7. POLLUTION CLASSIFICATION")
+
+        classification_pipeline = [
+            {
+                "$project": {
+                    "pollution_category": {
+                        "$switch": {
+                            "branches": [
+                                {
+                                    "case": {"$lte": ["$pm25", 15]},
+                                    "then": "Low"
+                                },
+                                {
+                                    "case": {"$lte": ["$pm25", 35]},
+                                    "then": "Moderate"
+                                },
+                                {
+                                    "case": {"$lte": ["$pm25", 55]},
+                                    "then": "High"
+                                }
+                            ],
+                            "default": "Very High"
+                        }
+                    }
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$pollution_category",
+                    "total_readings": {"$sum": 1}
+                }
+            },
+            {"$sort": {"total_readings": -1}}
+        ]
+
+        for result in collection.aggregate(classification_pipeline):
+            pprint(result)
+
+
+        # 8. Duplicate and invalid data analysis
+        print("\n8. DATA QUALITY CHECKS")
+
+        duplicate_pipeline = [
+            {
+                "$group": {
+                    "_id": {
+                        "sensor_id": "$sensor_id",
+                        "timestamp": "$timestamp"
+                    },
+                    "count": {"$sum": 1}
+                }
+            },
+            {
+                "$match": {
+                    "count": {"$gt": 1}
+                }
+            },
+            {
+                "$count": "duplicate_groups"
+            }
+        ]
+
+        duplicates = list(collection.aggregate(duplicate_pipeline))
+
+        print(
+            "Duplicate sensor-timestamp groups:",
+            duplicates[0]["duplicate_groups"] if duplicates else 0
+        )
+
+        invalid_count = collection.count_documents({
+            "$or": [
+                {"temperature": {"$lt": 10}},
+                {"temperature": {"$gt": 45}},
+                {"humidity": {"$lt": 20}},
+                {"humidity": {"$gt": 100}},
+                {"pm25": {"$lt": 0}},
+                {"pm10": {"$lt": 0}},
+                {"co2": {"$lt": 300}}
+            ]
+        })
+
+        print("Invalid readings:", invalid_count)
         print("\nAnalysis completed successfully!")
 
     except Exception as error:
         print("Analysis error:", error)
-
     finally:
         client.close()
-
+        
 
 if __name__ == "__main__":
     main()
