@@ -453,25 +453,91 @@ st.dataframe(
 )
 
 
+
 # ----------------------------------
-# ANOMALY DETECTION
+# ADVANCED ANOMALY DETECTION
 # ----------------------------------
 
-st.subheader("⚠️ Potential Environmental Anomalies")
+st.subheader("⚠️ Advanced Environmental Anomaly Detection")
 
+# Project-defined demo thresholds
+TEMP_LIMIT = 40
+PM25_LIMIT = 35
+PM10_LIMIT = 100
+CO2_LIMIT = 1000
+
+# Identify abnormal readings
+temperature_alerts = filtered_df["temperature"] > TEMP_LIMIT
+pm25_alerts = filtered_df["pm25"] > PM25_LIMIT
+pm10_alerts = filtered_df["pm10"] > PM10_LIMIT
+co2_alerts = filtered_df["co2"] > CO2_LIMIT
+
+# Combine all anomaly conditions
 anomalies = filtered_df[
-    (filtered_df["temperature"] > 40) |
-    (filtered_df["pm25"] > 35) |
-    (filtered_df["pm10"] > 100) |
-    (filtered_df["co2"] > 1000)
+    temperature_alerts |
+    pm25_alerts |
+    pm10_alerts |
+    co2_alerts
 ].copy()
 
+# Display individual alert counts
+alert_col1, alert_col2, alert_col3, alert_col4 = st.columns(4)
+
+alert_col1.metric(
+    "High Temperature",
+    f"{temperature_alerts.sum():,}"
+)
+
+alert_col2.metric(
+    "High PM2.5",
+    f"{pm25_alerts.sum():,}"
+)
+
+alert_col3.metric(
+    "High PM10",
+    f"{pm10_alerts.sum():,}"
+)
+
+alert_col4.metric(
+    "High CO2",
+    f"{co2_alerts.sum():,}"
+)
+
 st.metric(
-    "Potential Abnormal Readings",
+    "Total Unique Abnormal Readings",
     f"{len(anomalies):,}"
 )
 
+# Identify the reason for each anomaly
+def get_alert_reason(row):
+
+    reasons = []
+
+    if row["temperature"] > TEMP_LIMIT:
+        reasons.append("High Temperature")
+
+    if row["pm25"] > PM25_LIMIT:
+        reasons.append("High PM2.5")
+
+    if row["pm10"] > PM10_LIMIT:
+        reasons.append("High PM10")
+
+    if row["co2"] > CO2_LIMIT:
+        reasons.append("High CO2")
+
+    return ", ".join(reasons)
+
+
 if not anomalies.empty:
+
+    anomalies["alert_reason"] = anomalies.apply(
+        get_alert_reason,
+        axis=1
+    )
+
+    st.warning(
+        "Potential environmental abnormalities detected."
+    )
 
     st.dataframe(
         anomalies[
@@ -482,19 +548,26 @@ if not anomalies.empty:
                 "temperature",
                 "pm25",
                 "pm10",
-                "co2"
+                "co2",
+                "alert_reason"
             ]
-        ].sort_values("timestamp", ascending=False),
+        ].sort_values(
+            "timestamp",
+            ascending=False
+        ),
         use_container_width=True,
         hide_index=True
     )
 
 else:
-    st.success("No readings exceeded the configured demo thresholds.")
+    st.success(
+        "No readings exceeded the configured demo thresholds."
+    )
 
 st.caption(
-    "Alerts use project-defined thresholds for demonstration, "
-    "not official regulatory classifications."
+    "Alerts use project-defined demonstration thresholds, "
+    "not official regulatory standards. Individual alert counts "
+    "may overlap when a reading exceeds multiple thresholds."
 )
 
 
